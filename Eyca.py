@@ -11,7 +11,7 @@ def login():
 
     if not st.session_state.autenticado:
         st.title("🔐 Acceso Mayorista - Eyca")
-        clave_ingresada = st.text_input("Introduce la clave de acceso:", type="password")
+        clave_ingresada = st.text_input("clave_bodega", type="password")
         
         if st.button("Entrar"):
             # Aquí comparamos con la clave guardada en 'Secrets'
