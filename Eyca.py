@@ -4,6 +4,30 @@ from datetime import datetime
 from PIL import Image
 import os
 
+# --- NUEVO: SISTEMA DE SEGURIDAD CON SECRETS ---
+def login():
+    if "autenticado" not in st.session_state:
+        st.session_state.autenticado = False
+
+    if not st.session_state.autenticado:
+        st.title("🔐 Acceso Mayorista - Eyca")
+        clave_ingresada = st.text_input("Introduce la clave de acceso:", type="password")
+        
+        if st.button("Entrar"):
+            # Aquí comparamos con la clave guardada en 'Secrets'
+            if clave_ingresada == st.secrets["clave_bodega"]:
+                st.session_state.autenticado = True
+                st.rerun()
+            else:
+                st.error("❌ Clave incorrecta. Contacta a la administración de Eyca.")
+        return False
+    return True
+
+# Si el login falla, detiene el resto del código
+if not login():
+    st.stop()
+# --- FIN SEGURIDAD ---
+
 # 1. CONFIGURACIÓN DE PÁGINA
 st.set_page_config(page_title="Eyca Accesorios - Bodega", layout="centered")
 
