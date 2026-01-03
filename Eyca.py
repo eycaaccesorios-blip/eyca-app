@@ -55,7 +55,7 @@ st.markdown("### Gestión Mayorista 2026")
 
 menu = st.sidebar.selectbox("Menú de Gestión", ["Vender / Facturar", "Cargar Inventario", "Gestionar Stock"])
 
-# --- MÓDULO 1: CARGAR INVENTARIO (CON FOTO) ---
+# --- MÓDULO 1: CARGAR INVENTARIO (CÁMARA + GALERÍA) ---
 if menu == "Cargar Inventario":
     st.header("📦 Registro de Nuevo Producto")
     with st.form("nuevo_producto", clear_on_submit=True):
@@ -64,19 +64,33 @@ if menu == "Cargar Inventario":
         precio = st.number_input("Precio Mayorista ($)", min_value=0, step=100)
         stock = st.number_input("Cantidad en Bodega", min_value=0, step=1)
         categoria = st.selectbox("Categoría", ["Anillos", "Aretes", "Cadenas", "Pulseras", "Otros"])
-        foto = st.camera_input("Capturar Foto del Accesorio") # Activa cámara en móvil
+        
+        # --- OPCIÓN DOBLE PARA FOTOS ---
+        st.write("---")
+        opcion_foto = st.radio("Método para la imagen:", ["Tomar Foto (Cámara)", "Subir de Galería"])
+        
+        foto = None
+        if opcion_foto == "Tomar Foto (Cámara)":
+            foto = st.camera_input("Capturar Foto")
+        else:
+            foto = st.file_uploader("Selecciona imagen de la galería", type=["jpg", "png", "jpeg"])
+        st.write("---")
         
         enviado = st.form_submit_button("Registrar en Inventario")
         
         if enviado:
             if codigo and nombre:
-                # Guardar la imagen físicamente
-                foto_path = f"fotos/{codigo}.jpg"
+                # Crear carpeta si no existe
                 if not os.path.exists('fotos'): 
                     os.makedirs('fotos')
                 
+                foto_path = f"fotos/{codigo}.jpg"
+                
                 if foto:
                     img = Image.open(foto)
+                    # Convertimos a RGB para asegurar que se guarde como JPG correctamente
+                    if img.mode != 'RGB':
+                        img = img.convert('RGB')
                     img.save(foto_path)
                 else:
                     foto_path = "Sin foto"
