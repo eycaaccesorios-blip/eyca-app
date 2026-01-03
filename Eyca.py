@@ -58,49 +58,50 @@ menu = st.sidebar.selectbox("Menú de Gestión", ["Vender / Facturar", "Cargar I
 # --- MÓDULO 1: CARGAR INVENTARIO (CÁMARA + GALERÍA) ---
 if menu == "Cargar Inventario":
     st.header("📦 Registro de Nuevo Producto")
-    with st.form("nuevo_producto", clear_on_submit=True):
+    
+    # 1. Selector de método fuera del form para mejor respuesta en móvil
+    opcion_foto = st.pills("Método de imagen", ["Cámara", "Galería"], default="Cámara")
+    
+    foto_archivo = None
+    if opcion_foto == "Cámara":
+        foto_archivo = st.camera_input("Capturar Foto")
+    else:
+        # label_visibility="collapsed" para que se vea más limpio
+        foto_archivo = st.file_uploader("Acceder a archivos/galería", type=["jpg", "png", "jpeg"])
+
+    # 2. Formulario para los datos de texto
+    with st.form("datos_producto", clear_on_submit=True):
         codigo = st.text_input("Código Único (ej: AN-001)")
         nombre = st.text_input("Nombre del Accesorio")
         precio = st.number_input("Precio Mayorista ($)", min_value=0, step=100)
         stock = st.number_input("Cantidad en Bodega", min_value=0, step=1)
         categoria = st.selectbox("Categoría", ["Anillos", "Aretes", "Cadenas", "Pulseras", "Otros"])
         
-        # --- OPCIÓN DOBLE PARA FOTOS ---
-        st.write("---")
-        opcion_foto = st.radio("Método para la imagen:", ["Tomar Foto (Cámara)", "Subir de Galería"])
-        
-        foto = None
-        if opcion_foto == "Tomar Foto (Cámara)":
-            foto = st.camera_input("Capturar Foto")
-        else:
-            foto = st.file_uploader("Selecciona imagen de la galería", type=["jpg", "png", "jpeg"])
-        st.write("---")
-        
         enviado = st.form_submit_button("Registrar en Inventario")
         
         if enviado:
             if codigo and nombre:
-                # Crear carpeta si no existe
                 if not os.path.exists('fotos'): 
                     os.makedirs('fotos')
                 
                 foto_path = f"fotos/{codigo}.jpg"
                 
-                if foto:
-                    img = Image.open(foto)
-                    # Convertimos a RGB para asegurar que se guarde como JPG correctamente
+                # Usamos la foto capturada fuera del form
+                if foto_archivo:
+                    img = Image.open(foto_archivo)
                     if img.mode != 'RGB':
                         img = img.convert('RGB')
                     img.save(foto_path)
                 else:
                     foto_path = "Sin foto"
 
-                # Agregar al DataFrame
                 st.session_state.inventario.loc[codigo] = [nombre, precio, stock, categoria, foto_path]
                 guardar_datos()
                 st.success(f"✅ {nombre} registrado correctamente.")
+                st.rerun() # Recarga para limpiar el cargador de archivos
             else:
                 st.error("⚠️ El Código y el Nombre son obligatorios.")
+
 
 # --- MÓDULO 2: VENDER Y FACTURAR ---
 elif menu == "Vender / Facturar":
