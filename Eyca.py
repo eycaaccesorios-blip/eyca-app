@@ -75,7 +75,8 @@ if menu == "Cargar Inventario":
         nombre = st.text_input("Nombre del Accesorio")
         precio = st.number_input("Precio Mayorista ($)", min_value=0, step=100)
         stock = st.number_input("Cantidad en Bodega", min_value=0, step=1)
-        categoria = st.selectbox("Categoría", ["Anillos", "Aretes", "Cadenas", "Pulseras", "Otros"])
+        categoria = st.selectbox("Categoría", ["Anillos", "Aretes", "Cadenas", "Pulseras", "Candongas", "Topitos",
+        "Tobilleras", "Earcuff", "Relojes", "Juegos", "Otros"])
         
         enviado = st.form_submit_button("Registrar en Inventario")
         
