@@ -1,3 +1,7 @@
 streamlit
 pandas
 pillow
+gspread
+google-auth
+st-gsheets-connection
+
