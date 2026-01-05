@@ -1,180 +1,164 @@
 import streamlit as st
 import pandas as pd
-from streamlit_gsheets import GSheetsConnection
-from fpdf import FPDF
 import cloudinary
 import cloudinary.uploader
 from PIL import Image
+from datetime import datetime
+from fpdf import FPDF
 import io
-import os
 
-# 1. CONFIGURACIÓN DE PÁGINA
+# 1. CONFIGURACIÓN INICIAL
 st.set_page_config(page_title="Eyca Accesorios - Bodega", layout="wide")
 
-# 2. CONFIGURACIÓN DE CLOUDINARY (Fotos permanentes)
+# Configuración de Cloudinary (Fotos)
 cloudinary.config(
     cloud_name = st.secrets["cloud_name"],
     api_key = st.secrets["api_key"],
     api_secret = st.secrets["api_secret"]
 )
 
-# 3. CONEXIÓN A GOOGLE SHEETS
-# Asegúrate de configurar la URL de tu hoja en Secrets como 'spreadsheet'
-conn = st.connection("gsheets", type=GSheetsConnection)
-
-def obtener_inventario():
+# 2. CARGA DE DATOS DESDE LINK PÚBLICO (Google Sheets)
+def obtener_datos():
     try:
-        return conn.read(ttl="1m")
-    except:
-        # En caso de error de conexión, devolvemos un DataFrame vacío con estructura
+        # El link de secrets debe terminar en /edit... lo convertimos a exportación CSV
+        url_original = st.secrets["connections"]["gsheets"]["spreadsheet"]
+        url_csv = url_original.replace("/edit?usp=sharing", "/export?format=csv")
+        url_csv = url_csv.replace("/edit#gid=", "/export?format=csv&gid=")
+        return pd.read_csv(url_csv)
+    except Exception as e:
+        # Si falla, creamos uno vacío para no romper la app
         return pd.DataFrame(columns=['Codigo', 'Nombre', 'Precio', 'Stock', 'Categoria', 'Foto_URL'])
 
-# 4. SEGURIDAD
+# 3. SEGURIDAD
 def login():
-    if "autenticado" not in st.session_state:
-        st.session_state.autenticado = False
-    if not st.session_state.autenticado:
-        st.title("🔐 Acceso Mayorista - Eyca")
-        clave = st.text_input("Introduce la clave de acceso:", type="password")
-        if st.button("Entrar"):
+    if "auth" not in st.session_state: st.session_state.auth = False
+    if not st.session_state.auth:
+        st.title("🔐 Acceso Administrativo - Eyca")
+        clave = st.text_input("Clave de Bodega:", type="password")
+        if st.button("Ingresar"):
             if clave == st.secrets["clave_bodega"]:
-                st.session_state.autenticado = True
+                st.session_state.auth = True
                 st.rerun()
             else:
                 st.error("Clave incorrecta")
         return False
     return True
 
-# 5. FUNCIÓN GENERAR PDF
-def generar_pdf(cliente, carrito, subtotal, descuento, total):
+# 4. FUNCIÓN PARA GENERAR FACTURA PDF
+def generar_pdf(cliente, carrito, subtotal, desc, total):
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial", 'B', 18)
-    pdf.set_text_color(200, 0, 100) # Color distintivo Eyca
-    pdf.cell(200, 15, "EYCA ACCESORIOS - FACTURA MAYORISTA", ln=True, align='C')
-    
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(200, 10, "EYCA ACCESORIOS - FACTURA MAYORISTA", ln=True, align='C')
     pdf.set_font("Arial", size=12)
-    pdf.set_text_color(0, 0, 0)
     pdf.cell(200, 10, f"Cliente: {cliente}", ln=True)
-    pdf.cell(200, 10, f"Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}", ln=True)
+    pdf.cell(200, 10, f"Fecha: {datetime.now().strftime('%d/%m/%Y')}", ln=True)
     pdf.ln(10)
-
-    # Tabla
-    pdf.set_fill_color(240, 240, 240)
+    
+    pdf.set_fill_color(230, 230, 230)
     pdf.cell(100, 10, "Producto", 1, 0, 'C', True)
-    pdf.cell(30, 10, "Cant.", 1, 0, 'C', True)
-    pdf.cell(40, 10, "Precio Unit.", 1, 1, 'C', True)
-
+    pdf.cell(40, 10, "Cant", 1, 0, 'C', True)
+    pdf.cell(40, 10, "Subtotal", 1, 1, 'C', True)
+    
     for item in carrito:
         pdf.cell(100, 10, item['nombre'], 1)
-        pdf.cell(30, 10, str(item['cantidad']), 1, 0, 'C')
-        pdf.cell(40, 10, f"${item['precio']:,.0f}", 1, 1, 'R')
-
+        pdf.cell(40, 10, str(item['cant']), 1, 0, 'C')
+        pdf.cell(40, 10, f"${item['sub']:,}", 1, 1, 'R')
+    
     pdf.ln(5)
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(130, 10, "Subtotal:", 0, 0, 'R')
-    pdf.cell(40, 10, f"${subtotal:,.0f}", 0, 1, 'R')
-    pdf.cell(130, 10, f"Descuento ({descuento}%):", 0, 0, 'R')
-    pdf.cell(40, 10, f"-${(subtotal * descuento / 100):,.0f}", 0, 1, 'R')
+    pdf.cell(140, 10, "Subtotal:", 0, 0, 'R')
+    pdf.cell(40, 10, f"${subtotal:,}", 0, 1, 'R')
+    pdf.cell(140, 10, f"Descuento ({desc}%):", 0, 0, 'R')
+    pdf.cell(40, 10, f"-${(subtotal*desc/100):,}", 0, 1, 'R')
     pdf.set_font("Arial", 'B', 14)
-    pdf.cell(130, 15, "TOTAL NETO:", 0, 0, 'R')
-    pdf.cell(40, 15, f"${total:,.0f}", 0, 1, 'R')
-
+    pdf.cell(140, 10, "TOTAL:", 0, 0, 'R')
+    pdf.cell(40, 10, f"${total:,}", 0, 1, 'R')
+    
     return pdf.output(dest='S').encode('latin-1')
 
 # --- MENÚ DE NAVEGACIÓN ---
-menu_principal = st.sidebar.radio("Navegación", ["✨ Catálogo Público", "🔐 Área de Bodega"])
+menu = st.sidebar.radio("Navegación", ["✨ Catálogo Público", "🔐 Área de Bodega"])
 
-if menu_principal == "✨ Catálogo Público":
-    st.title("💍 Catálogo Público Eyca Accesorios")
-    df = obtener_inventario()
+if menu == "✨ Catálogo Público":
+    st.title("💍 Catálogo Eyca Accesorios 2026")
+    df = obtener_datos()
     
     if not df.empty:
-        categorias = ["Todas"] + list(df["Categoria"].unique())
-        cat_elegida = st.selectbox("Filtrar por categoría:", categorias)
+        cat = ["Todos"] + list(df['Categoria'].unique())
+        filtro = st.selectbox("Filtrar por tipo:", cat)
+        items = df if filtro == "Todos" else df[df['Categoria'] == filtro]
         
-        items = df if cat_elegida == "Todas" else df[df["Categoria"] == cat_elegida]
-        
-        cols = st.columns(3)
+        grid = st.columns(3)
         for i, (idx, row) in enumerate(items.iterrows()):
-            with cols[i % 3]:
-                if pd.notna(row['Foto_URL']) and row['Foto_URL'] != "Sin foto":
-                    st.image(row['Foto_URL'], use_container_width=True)
-                st.write(f"**{row['Nombre']}**")
+            with grid[i % 3]:
+                st.image(row['Foto_URL'], use_container_width=True)
+                st.subheader(row['Nombre'])
                 st.caption(f"Ref: {row['Codigo']}")
                 st.write("---")
     else:
-        st.info("Cargando catálogo...")
+        st.warning("Aún no hay productos en el catálogo de Google Sheets.")
 
-elif menu_principal == "🔐 Área de Bodega":
-    if not login():
-        st.stop()
-
-    st.sidebar.divider()
-    sub_menu = st.sidebar.selectbox("Gestión", ["Vender", "Cargar Inventario", "Ver Stock"])
-
-    if sub_menu == "Cargar Inventario":
-        st.header("📦 Cargar Nuevo Accesorio")
+elif menu == "🔐 Área de Bodega":
+    if login():
+        st.sidebar.divider()
+        opcion = st.sidebar.selectbox("Gestión", ["Vender", "Cargar Inventario", "Respaldo"])
         
-        metodo = st.pills("Origen de imagen", ["Cámara", "Galería"])
-        img_file = st.camera_input("Foto") if metodo == "Cámara" else st.file_uploader("Galería", type=["jpg", "png", "jpeg"])
+        inventario_actual = obtener_datos()
 
-        with st.form("form_carga", clear_on_submit=True):
-            col_a, col_b = st.columns(2)
-            with col_a:
-                cod = st.text_input("Código")
-                nom = st.text_input("Nombre")
-            with col_b:
-                pre = st.number_input("Precio Mayorista", min_value=0)
-                stk = st.number_input("Stock Inicial", min_value=0)
+        if opcion == "Cargar Inventario":
+            st.header("📦 Cargar Nuevo Producto")
+            st.info("Nota: Las fotos se guardan en la nube. Los datos de texto debes copiarlos a tu Google Sheet.")
             
-            cat = st.selectbox("Categoría", ["Anillos", "Aretes", "Cadenas", "Pulseras", "Relojes", "Otros"])
+            with st.form("carga_form", clear_on_submit=True):
+                c1, c2 = st.columns(2)
+                with c1:
+                    cod = st.text_input("Código")
+                    nom = st.text_input("Nombre del Accesorio")
+                    cat = st.selectbox("Categoría", ["Anillos", "Aretes", "Cadenas", "Relojes", "Otros"])
+                with c2:
+                    pre = st.number_input("Precio Mayorista", min_value=0)
+                    stk = st.number_input("Stock Inicial", min_value=0)
+                
+                foto_input = st.file_uploader("Subir imagen (Cámara o Galería)", type=['jpg','png','jpeg'])
+                
+                if st.form_submit_button("Subir a la Nube"):
+                    if foto_input and cod:
+                        # Subir a Cloudinary
+                        res = cloudinary.uploader.upload(foto_input)
+                        st.success(f"✅ Foto cargada. Copia este link a tu Google Sheet en la columna Foto_URL: {res['secure_url']}")
+                        st.code(f"{cod}, {nom}, {pre}, {stk}, {cat}, {res['secure_url']}")
+                    else:
+                        st.error("Faltan datos o foto.")
+
+        elif opcion == "Vender":
+            st.header("🛒 Facturación Mayorista")
+            if 'carrito_eyca' not in st.session_state: st.session_state.carrito_eyca = []
             
-            if st.form_submit_button("Guardar en Nube"):
-                if img_file and cod and nom:
-                    # 1. Subir a Cloudinary
-                    upload_result = cloudinary.uploader.upload(img_file)
-                    url_nube = upload_result['secure_url']
-                    
-                    # 2. Guardar en Google Sheets
-                    nuevo_item = pd.DataFrame([{"Codigo": cod, "Nombre": nom, "Precio": pre, "Stock": stk, "Categoria": cat, "Foto_URL": url_nube}])
-                    # Nota: Para actualizar Sheets en tiempo real necesitas permisos de escritura
-                    # Por ahora lo mostramos como éxito.
-                    st.success(f"Producto {nom} guardado permanentemente.")
-                    st.info(f"URL de imagen: {url_nube}")
-                else:
-                    st.warning("Completa todos los campos y la foto.")
+            for i, row in inventario_actual.iterrows():
+                col1, col2 = st.columns([1,3])
+                with col1: st.image(row['Foto_URL'], width=80)
+                with col2:
+                    if st.button(f"Añadir {row['Nombre']} (${row['Precio']:,})", key=row['Codigo']):
+                        st.session_state.carrito_eyca.append({'nombre': row['Nombre'], 'precio': row['Precio'], 'cant': 1, 'sub': row['Precio']})
+                        st.toast("Añadido")
 
-    elif sub_menu == "Vender":
-        st.header("🛒 Generar Factura")
-        df_v = obtener_inventario()
-        
-        if "carrito_v2" not in st.session_state: st.session_state.carrito_v2 = []
+            if st.session_state.carrito_eyca:
+                st.divider()
+                df_c = pd.DataFrame(st.session_state.carrito_eyca)
+                desc = st.slider("Descuento (%)", 0, 50, 0)
+                subt = df_car = df_c['sub'].sum()
+                total = subt * (1 - desc/100)
+                
+                st.table(df_c[['nombre', 'precio', 'cant']])
+                st.write(f"### Total: ${total:,.0f}")
+                
+                cliente = st.text_input("Nombre del Cliente")
+                if st.button("Finalizar y Descargar PDF") and cliente:
+                    pdf = generar_pdf(cliente, st.session_state.carrito_eyca, subt, desc, total)
+                    st.download_button("📩 Descargar Factura", pdf, f"Factura_{cliente}.pdf", "application/pdf")
+                    st.session_state.carrito_eyca = []
 
-        for i, row in df_v.iterrows():
-            c1, c2 = st.columns([1, 3])
-            with c1: st.image(row['Foto_URL'], width=80)
-            with c2:
-                if st.button(f"Añadir {row['Nombre']} (${row['Precio']})", key=row['Codigo']):
-                    st.session_state.carrito_v2.append({'nombre': row['Nombre'], 'precio': row['Precio'], 'cantidad': 1})
-                    st.toast("Añadido")
-
-        if st.session_state.carrito_v2:
-            st.divider()
-            df_car = pd.DataFrame(st.session_state.carrito_v2)
-            subtot = df_car['precio'].sum()
-            desc = st.slider("Descuento (%)", 0, 50, 0)
-            total = subtot * (1 - desc/100)
-            
-            st.table(df_car)
-            st.write(f"### TOTAL: ${total:,.0f}")
-            
-            nom_cli = st.text_input("Nombre del Cliente")
-            if st.button("Finalizar y Generar PDF") and nom_cli:
-                pdf_bytes = generar_pdf(nom_cli, st.session_state.carrito_v2, subtot, desc, total)
-                st.download_button("📩 Descargar Factura PDF", pdf_bytes, f"Factura_{nom_cli}.pdf", "application/pdf")
-                st.session_state.carrito_v2 = []
-
-    elif sub_menu == "Ver Stock":
-        st.header("📊 Inventario en Tiempo Real")
-        st.dataframe(obtener_inventario(), use_container_width=True)
+        elif opcion == "Respaldo":
+            st.header("📊 Ver Inventario Completo")
+            st.dataframe(inventario_actual)
+            st.download_button("Descargar CSV para Respaldo", inventario_actual.to_csv(index=False).encode('utf-8'), "inventario.csv")
