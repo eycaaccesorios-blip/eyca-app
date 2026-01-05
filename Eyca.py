@@ -1,235 +1,162 @@
 import streamlit as st
 import pandas as pd
-from streamlit_gsheets import GSheetsConnection # Conexión nativa 2026
-
-# --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Eyca Accesorios - Catálogo", layout="wide")
-
-# Conexión a Google Sheets (Inventario permanente)
-conn = st.connection("gsheets", type=GSheetsConnection)
-
-# --- MENÚ PRINCIPAL ---
-# El catálogo es lo primero que ve el público
-menu_principal = st.sidebar.radio("Navegación", ["✨ Catálogo Público", "🔐 Área de Bodega (Privado)"])
-
-# --- SECCIÓN 1: CATÁLOGO PÚBLICO (Sin clave) ---
-if menu_principal == "✨ Catálogo Público":
-    st.title("💍 Catálogo Eyca Accesorios")
-    st.markdown("### Encuentra nuestras últimas tendencias")
-    
-    # Leer datos de Google Sheets
-    df_publico = conn.read(worksheet="Inventario")
-    
-    # Buscador y Filtros
-    cat_filtro = st.multiselect("Filtrar por categoría", df_publico["Categoria"].unique())
-    
-    items = df_publico
-    if cat_filtro:
-        items = items[items["Categoria"].isin(cat_filtro)]
-
-    # Mostrar en cuadrícula (Grid) de 3 columnas
-    cols = st.columns(3)
-    for i, (idx, row) in enumerate(items.iterrows()):
-        with cols[i % 3]:
-            # Usamos el link de la foto guardada en Google Drive/Cloudinary
-            st.image(row["Foto_URL"], use_container_width=True)
-            st.write(f"**{row['Nombre']}**")
-            st.write(f"Ref: {idx}")
-            # No mostramos stock ni precio mayorista al público si no quieres
-            st.write("---")
-
-# --- SECCIÓN 2: ÁREA DE BODEGA (Con clave) ---
-elif menu_principal == "🔐 Área de Bodega (Privado)":
-    # Aquí pegas tu función de login() que ya teníamos
-    if not login():
-        st.stop()
-    
-    # Aquí va todo tu código anterior de ventas y carga de stock
-    st.title("Administración de Bodega")
-    # ... resto del código ...
-    
-import streamlit as st
-import pandas as pd
 from datetime import datetime
 from PIL import Image
 import os
+from streamlit_gsheets import GSheetsConnection
 
-# --- NUEVO: SISTEMA DE SEGURIDAD CON SECRETS ---
+# 1. CONFIGURACIÓN ÚNICA DE PÁGINA
+st.set_page_config(page_title="Eyca Accesorios", layout="wide")
+
+# 2. SEGURIDAD (Se define aquí, se usa abajo)
 def login():
     if "autenticado" not in st.session_state:
         st.session_state.autenticado = False
 
     if not st.session_state.autenticado:
         st.title("🔐 Acceso Mayorista - Eyca")
-        clave_ingresada = st.text_input("clave_bodega", type="password")
-        
+        clave_ingresada = st.text_input("Introduce la clave:", type="password")
         if st.button("Entrar"):
-            # Aquí comparamos con la clave guardada en 'Secrets'
             if clave_ingresada == st.secrets["clave_bodega"]:
                 st.session_state.autenticado = True
                 st.rerun()
             else:
-                st.error("❌ Clave incorrecta. Contacta a la administración de Eyca.")
+                st.error("❌ Clave incorrecta")
         return False
     return True
 
-# Si el login falla, detiene el resto del código
-if not login():
-    st.stop()
-# --- FIN SEGURIDAD ---
-
-# 1. CONFIGURACIÓN DE PÁGINA
-st.set_page_config(page_title="Eyca Accesorios - Bodega", layout="centered")
-
-# 2. PERSISTENCIA DE DATOS (INVENTARIO)
+# 3. PERSISTENCIA DE DATOS LOCALES (Hasta que termines la conexión a Sheets)
 if 'inventario' not in st.session_state:
     if os.path.exists('inventario.csv'):
-        # Cargamos el archivo y nos aseguramos de que el código sea el índice
         st.session_state.inventario = pd.read_csv('inventario.csv', index_col='Codigo')
     else:
-        # Si no existe, creamos la estructura base
-        columnas = ['Nombre', 'Precio', 'Stock', 'Categoria', 'Foto']
-        st.session_state.inventario = pd.DataFrame(columns=columnas)
+        st.session_state.inventario = pd.DataFrame(columns=['Nombre', 'Precio', 'Stock', 'Categoria', 'Foto'])
         st.session_state.inventario.index.name = 'Codigo'
 
 if 'carrito' not in st.session_state:
     st.session_state.carrito = []
 
-# --- FUNCIONES ---
 def guardar_datos():
     st.session_state.inventario.to_csv('inventario.csv')
 
-# --- INTERFAZ PRINCIPAL ---
-st.title("💍 Bodega Eyca Accesorios")
-st.markdown("### Gestión Mayorista 2026")
+# --- MENÚ PRINCIPAL ---
+menu_principal = st.sidebar.radio("Navegación", ["✨ Catálogo Público", "🔐 Área de Bodega (Privado)"])
 
-menu = st.sidebar.selectbox("Menú de Gestión", ["Vender / Facturar", "Cargar Inventario", "Gestionar Stock"])
-
-# --- MÓDULO 1: CARGAR INVENTARIO (CÁMARA + GALERÍA) ---
-if menu == "Cargar Inventario":
-    st.header("📦 Registro de Nuevo Producto")
+# --- SECCIÓN 1: CATÁLOGO PÚBLICO ---
+if menu_principal == "✨ Catálogo Público":
+    st.title("💍 Catálogo Eyca Accesorios")
+    st.markdown("### Tendencias 2026")
     
-    # 1. Selector de método fuera del form para mejor respuesta en móvil
-    opcion_foto = st.pills("Método de imagen", ["Cámara", "Galería"], default="Cámara")
-    
-    foto_archivo = None
-    if opcion_foto == "Cámara":
-        foto_archivo = st.camera_input("Capturar Foto")
-    else:
-        # label_visibility="collapsed" para que se vea más limpio
-        foto_archivo = st.file_uploader("Acceder a archivos/galería", type=["jpg", "png", "jpeg"])
-
-    # 2. Formulario para los datos de texto
-    with st.form("datos_producto", clear_on_submit=True):
-        codigo = st.text_input("Código Único (ej: AN-001)")
-        nombre = st.text_input("Nombre del Accesorio")
-        precio = st.number_input("Precio Mayorista ($)", min_value=0, step=100)
-        stock = st.number_input("Cantidad en Bodega", min_value=0, step=1)
-        categoria = st.selectbox("Categoría", ["Anillos", "Aretes", "Cadenas", "Pulseras", "Candongas", "Topitos",
-        "Tobilleras", "Earcuff", "Relojes", "Juegos" "Otros"])
-        
-        enviado = st.form_submit_button("Registrar en Inventario")
-        
-        if enviado:
-            if codigo and nombre:
-                if not os.path.exists('fotos'): 
-                    os.makedirs('fotos')
-                
-                foto_path = f"fotos/{codigo}.jpg"
-                
-                # Usamos la foto capturada fuera del form
-                if foto_archivo:
-                    img = Image.open(foto_archivo)
-                    if img.mode != 'RGB':
-                        img = img.convert('RGB')
-                    img.save(foto_path)
-                else:
-                    foto_path = "Sin foto"
-
-                st.session_state.inventario.loc[codigo] = [nombre, precio, stock, categoria, foto_path]
-                guardar_datos()
-                st.success(f"✅ {nombre} registrado correctamente.")
-                st.rerun() # Recarga para limpiar el cargador de archivos
-            else:
-                st.error("⚠️ El Código y el Nombre son obligatorios.")
-
-
-# --- MÓDULO 2: VENDER Y FACTURAR ---
-elif menu == "Vender / Facturar":
-    st.header("🛒 Panel de Ventas Mayoristas")
-    
-    busqueda = st.text_input("🔍 Buscar por nombre o código...")
     items = st.session_state.inventario
-    
-    if busqueda:
-        items = items[items['Nombre'].str.contains(busqueda, case=False) | items.index.str.contains(busqueda, case=False)]
+    if not items.empty:
+        cat_filtro = st.multiselect("Filtrar por categoría", items["Categoria"].unique())
+        if cat_filtro:
+            items = items[items["Categoria"].isin(cat_filtro)]
 
-    # Mostrar Galería
-    for codigo_id, row in items.iterrows():
-        with st.container():
-            col1, col2 = st.columns([1, 2])
-            with col1:
+        cols = st.columns(3)
+        for i, (idx, row) in enumerate(items.iterrows()):
+            with cols[i % 3]:
                 if os.path.exists(str(row['Foto'])):
-                    st.image(row['Foto'], width=120)
+                    st.image(row['Foto'], use_container_width=True)
                 else:
-                    st.info("Sin foto")
-                        with col2:
+                    st.write("📸 Foto próximamente")
                 st.write(f"**{row['Nombre']}**")
-                st.write(f"Ref: {codigo_id} | Stock: {row['Stock']}")
-                st.write(f"Precio: **${row['Precio']:,}**")
-                
-                # Nueva fila para cantidad y botón
-                c1, c2 = st.columns([1, 1])
-                with c1:
-                    cantidad = st.number_input("Cant.", min_value=1, max_value=int(row['Stock']), key=f"q_{codigo_id}", step=1)
-                with c2:
-                    if st.button(f"Añadir", key=f"btn_{codigo_id}"):
-                        for _ in range(int(cantidad)):
-                            st.session_state.carrito.append({'id': codigo_id, 'nombre': row['Nombre'], 'precio': row['Precio']})
-                        st.toast(f"Añadido: {int(cantidad)} {row['Nombre']}")
-                    else:
-                        st.error("Producto sin stock")
+                st.write(f"Ref: {idx}")
+                st.write("---")
+    else:
+        st.info("El catálogo está siendo actualizado. ¡Vuelve pronto!")
 
-    # Resumen de Factura
-    if st.session_state.carrito:
-        st.divider()
-        st.subheader("📄 Detalle de Factura")
-        df_pedido = pd.DataFrame(st.session_state.carrito)
-        
-        # Gestión de Descuentos
-        desc = st.slider("Aplica un descuento (%)", 0, 50, 0)
-        
-        total_bruto = df_pedido['precio'].sum()
-        ahorro = total_bruto * (desc / 100)
-        total_neto = total_bruto - ahorro
-        
-        st.dataframe(df_pedido[['nombre', 'precio']], use_container_width=True)
-        
-        st.write(f"**Subtotal:** ${total_bruto:,.0f}")
-        st.write(f"**Descuento ({desc}%):** -${ahorro:,.0f}")
-        st.write(f"### TOTAL A PAGAR: ${total_neto:,.0f}")
-        
-        cliente = st.text_input("Nombre del Comprador / Vendedor Externo")
-        
-        if st.button("Confirmar Venta y Descargar Stock"):
-            for item in st.session_state.carrito:
-                st.session_state.inventario.at[item['id'], 'Stock'] -= 1
-            
-            guardar_datos()
-            st.success(f"📝 Factura generada para {cliente}")
-            st.session_state.carrito = [] # Vaciar carrito
-            st.balloons()
-
-# --- MÓDULO 3: GESTIONAR STOCK ---
-elif menu == "Gestionar Stock":
-    st.header("📊 Inventario de Bodega")
-    st.dataframe(st.session_state.inventario, use_container_width=True)
+# --- SECCIÓN 2: ÁREA DE BODEGA (Privado) ---
+elif menu_principal == "🔐 Área de Bodega (Privado)":
+    if not login():
+        st.stop()
     
-    if st.button("Exportar a Excel/CSV"):
-        st.session_state.inventario.to_csv("reporte_eyca_2026.csv")
-        st.download_button(
-            label="Descargar Archivo",
-            data=st.session_state.inventario.to_csv().encode('utf-8'),
-            file_name='inventario_eyca.csv',
-            mime='text/csv'
-        )
+    st.sidebar.divider()
+    menu_bodega = st.sidebar.selectbox("Menú de Gestión", ["Vender / Facturar", "Cargar Inventario", "Gestionar Stock"])
+
+    if menu_bodega == "Cargar Inventario":
+        st.header("📦 Registro de Nuevo Producto")
+        opcion_foto = st.pills("Método de imagen", ["Cámara", "Galería"], default="Cámara")
+        
+        foto_archivo = None
+        if opcion_foto == "Cámara":
+            foto_archivo = st.camera_input("Capturar Foto")
+        else:
+            foto_archivo = st.file_uploader("Acceder a galería", type=["jpg", "png", "jpeg"])
+
+        with st.form("datos_producto", clear_on_submit=True):
+            codigo = st.text_input("Código Único")
+            nombre = st.text_input("Nombre")
+            precio = st.number_input("Precio Mayorista", min_value=0, step=100)
+            stock = st.number_input("Stock", min_value=0, step=1)
+            categoria = st.selectbox("Categoría", ["Anillos", "Aretes", "Cadenas", "Pulseras", "Candongas", "Topitos", "Tobilleras", "Relojes", "Otros"])
+            
+            if st.form_submit_button("Registrar"):
+                if codigo and nombre:
+                    if not os.path.exists('fotos'): os.makedirs('fotos')
+                    foto_path = f"fotos/{codigo}.jpg"
+                    if foto_archivo:
+                        img = Image.open(foto_archivo).convert('RGB')
+                        img.save(foto_path)
+                    else:
+                        foto_path = "Sin foto"
+                    
+                    st.session_state.inventario.loc[codigo] = [nombre, precio, stock, categoria, foto_path]
+                    guardar_datos()
+                    st.success("✅ Registrado")
+                    st.rerun()
+
+    elif menu_bodega == "Vender / Facturar":
+        st.header("🛒 Ventas Mayoristas")
+        busqueda = st.text_input("🔍 Buscar...")
+        items_v = st.session_state.inventario
+        if busqueda:
+            items_v = items_v[items_v['Nombre'].str.contains(busqueda, case=False) | items_v.index.str.contains(busqueda, case=False)]
+
+        for codigo_id, row in items_v.iterrows():
+            with st.container():
+                c1, c2 = st.columns([1, 2])
+                with c1:
+                    if os.path.exists(str(row['Foto'])): st.image(row['Foto'], width=120)
+                with c2:
+                    st.write(f"**{row['Nombre']}** (Ref: {codigo_id})")
+                    st.write(f"Stock: {row['Stock']} | **${row['Precio']:,}**")
+                    
+                    col_q, col_b = st.columns([1, 1])
+                    with col_q:
+                        cant = st.number_input("Cant.", min_value=1, max_value=int(row['Stock']) if row['Stock'] > 0 else 1, key=f"q_{codigo_id}")
+                    with col_b:
+                        if st.button("Añadir", key=f"btn_{codigo_id}"):
+                            for _ in range(int(cant)):
+                                st.session_state.carrito.append({'id': codigo_id, 'nombre': row['Nombre'], 'precio': row['Precio']})
+                            st.toast("Añadido")
+
+        if st.session_state.carrito:
+            st.divider()
+            df_p = pd.DataFrame(st.session_state.carrito)
+            desc = st.slider("Descuento (%)", 0, 50, 0)
+            total = df_p['precio'].sum() * (1 - desc/100)
+            st.dataframe(df_p)
+            st.write(f"### TOTAL: ${total:,.0f}")
+            if st.button("Confirmar Venta"):
+                for item in st.session_state.carrito:
+                    st.session_state.inventario.at[item['id'], 'Stock'] -= 1
+                guardar_datos()
+                st.session_state.carrito = []
+                st.success("Venta Guardada")
+                st.balloons()
+
+    elif menu_bodega == "Gestionar Stock":
+        st.header("📊 Inventario Actual")
+        st.dataframe(st.session_state.inventario, use_container_width=True)
+        st.download_button("Descargar Excel", st.session_state.inventario.to_csv().encode('utf-8'), "inventario.csv", "text/csv")
+        if st.button("Actualizar Stock desde CSV"):
+            archivo_csv = st.file_uploader("Subir archivo CSV", type=["csv"])
+            if archivo_csv:
+                nuevo_stock = pd.read_csv(archivo_csv, index_col='Codigo')
+                for codigo_id, row in nuevo_stock.iterrows():
+                    if codigo_id in st.session_state.inventario.index:
+                        st.session_state.inventario.at[codigo_id, 'Stock'] = row['Stock']
+                guardar_datos()
+                st.success("Stock actualizado")
+                st.rerun()
