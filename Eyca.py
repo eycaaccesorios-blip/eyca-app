@@ -1,5 +1,55 @@
 import streamlit as st
 import pandas as pd
+from streamlit_gsheets import GSheetsConnection # Conexión nativa 2026
+
+# --- CONFIGURACIÓN DE PÁGINA ---
+st.set_page_config(page_title="Eyca Accesorios - Catálogo", layout="wide")
+
+# Conexión a Google Sheets (Inventario permanente)
+conn = st.connection("gsheets", type=GSheetsConnection)
+
+# --- MENÚ PRINCIPAL ---
+# El catálogo es lo primero que ve el público
+menu_principal = st.sidebar.radio("Navegación", ["✨ Catálogo Público", "🔐 Área de Bodega (Privado)"])
+
+# --- SECCIÓN 1: CATÁLOGO PÚBLICO (Sin clave) ---
+if menu_principal == "✨ Catálogo Público":
+    st.title("💍 Catálogo Eyca Accesorios")
+    st.markdown("### Encuentra nuestras últimas tendencias")
+    
+    # Leer datos de Google Sheets
+    df_publico = conn.read(worksheet="Inventario")
+    
+    # Buscador y Filtros
+    cat_filtro = st.multiselect("Filtrar por categoría", df_publico["Categoria"].unique())
+    
+    items = df_publico
+    if cat_filtro:
+        items = items[items["Categoria"].isin(cat_filtro)]
+
+    # Mostrar en cuadrícula (Grid) de 3 columnas
+    cols = st.columns(3)
+    for i, (idx, row) in enumerate(items.iterrows()):
+        with cols[i % 3]:
+            # Usamos el link de la foto guardada en Google Drive/Cloudinary
+            st.image(row["Foto_URL"], use_container_width=True)
+            st.write(f"**{row['Nombre']}**")
+            st.write(f"Ref: {idx}")
+            # No mostramos stock ni precio mayorista al público si no quieres
+            st.write("---")
+
+# --- SECCIÓN 2: ÁREA DE BODEGA (Con clave) ---
+elif menu_principal == "🔐 Área de Bodega (Privado)":
+    # Aquí pegas tu función de login() que ya teníamos
+    if not login():
+        st.stop()
+    
+    # Aquí va todo tu código anterior de ventas y carga de stock
+    st.title("Administración de Bodega")
+    # ... resto del código ...
+    
+import streamlit as st
+import pandas as pd
 from datetime import datetime
 from PIL import Image
 import os
@@ -76,7 +126,7 @@ if menu == "Cargar Inventario":
         precio = st.number_input("Precio Mayorista ($)", min_value=0, step=100)
         stock = st.number_input("Cantidad en Bodega", min_value=0, step=1)
         categoria = st.selectbox("Categoría", ["Anillos", "Aretes", "Cadenas", "Pulseras", "Candongas", "Topitos",
-        "Tobilleras", "Earcuff", "Relojes", "Juegos", "Otros"])
+        "Tobilleras", "Earcuff", "Relojes", "Juegos" "Otros"])
         
         enviado = st.form_submit_button("Registrar en Inventario")
         
@@ -123,14 +173,20 @@ elif menu == "Vender / Facturar":
                     st.image(row['Foto'], width=120)
                 else:
                     st.info("Sin foto")
-            with col2:
+                        with col2:
                 st.write(f"**{row['Nombre']}**")
                 st.write(f"Ref: {codigo_id} | Stock: {row['Stock']}")
                 st.write(f"Precio: **${row['Precio']:,}**")
-                if st.button(f"Añadir al pedido", key=codigo_id):
-                    if row['Stock'] > 0:
-                        st.session_state.carrito.append({'id': codigo_id, 'nombre': row['Nombre'], 'precio': row['Precio']})
-                        st.toast(f"Añadido: {row['Nombre']}")
+                
+                # Nueva fila para cantidad y botón
+                c1, c2 = st.columns([1, 1])
+                with c1:
+                    cantidad = st.number_input("Cant.", min_value=1, max_value=int(row['Stock']), key=f"q_{codigo_id}", step=1)
+                with c2:
+                    if st.button(f"Añadir", key=f"btn_{codigo_id}"):
+                        for _ in range(int(cantidad)):
+                            st.session_state.carrito.append({'id': codigo_id, 'nombre': row['Nombre'], 'precio': row['Precio']})
+                        st.toast(f"Añadido: {int(cantidad)} {row['Nombre']}")
                     else:
                         st.error("Producto sin stock")
 
