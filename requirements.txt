@@ -6,3 +6,4 @@ google-auth
 st-gsheets-connection
 fpdf2
 cloudinary
+supabase
