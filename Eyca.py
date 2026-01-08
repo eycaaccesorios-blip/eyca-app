@@ -71,8 +71,8 @@ def generar_pdf(cliente, nit, vendedor, carrito, subtotal, desc_porc, total):
     pdf.cell(150, 10, "TOTAL NETO:", 0, 0, 'R')
     pdf.cell(40, 10, f"${total:,.0f}", 0, 1, 'R')
     
-    return pdf.output() # fpdf2 retorna bytes directamente
-
+     return bytes(pdf.output())
+     
 # --- FLUJO DE LA APLICACIÓN ---
 menu = st.sidebar.radio("Navegación", ["✨ Catálogo Público", "🔐 Gestión de Bodega"])
 
@@ -170,28 +170,38 @@ elif menu == "🔐 Gestión de Bodega":
                 
                 if st.button("Procesar Venta"):
                     with st.spinner("Actualizando stock..."):
-                        for item in st.session_state.car:
-                            # Obtener stock actual numérico
-                            stock_actual = int(df_inv.loc[df_inv['codigo'] == item['id'], 'stock'].iloc[0])
-                            nuevo_stk = stock_actual - item['cant']
-                            supabase.table("inventario").update({"stock": nuevo_stk}).eq("codigo", item['id']).execute()
-                        
-                        # Generar PDF y almacenarlo en sesión
-                        st.session_state.pdf_eyca = generar_pdf(nom_c, nit_c, nom_v, st.session_state.car, subt, desc, total)
-                        st.session_state.car = [] # Limpiar carrito
-                        st.success("¡Stock actualizado!")
+                        try:
+                            for item in st.session_state.car:
+                                # Obtener stock actual correctamente
+                                producto_db = df_inv.loc[df_inv['codigo'] == item['id']]
+                                if not producto_db.empty:
+                                    stock_actual = int(producto_db['stock'].values[0])
+                                    nuevo_stk = stock_actual - item['cant']
+                                    supabase.table("inventario").update({"stock": nuevo_stk}).eq("codigo", item['id']).execute()
+                            
+                            # Generar PDF y convertirlo a BytesIO para Streamlit 2026
+                            pdf_output = generar_pdf(nom_c, nit_c, nom_v, st.session_state.car, subt, desc, total)
+                            
+                            # Convertimos los bytes a un objeto que download_button acepte sin errores
+                            st.session_state.pdf_eyca = io.BytesIO(pdf_output)
+                            st.session_state.car = [] 
+                            st.success("✅ Venta procesada exitosamente")
+                        except Exception as e:
+                            st.error(f"Error al procesar: {e}")
 
-                if "pdf_eyca" in st.session_state:
+                # El botón de descarga ahora usa el buffer de memoria
+                if "pdf_eyca" in st.session_state and st.session_state.pdf_eyca is not None:
                     st.download_button(
                         label="📩 Descargar Factura PDF",
-                        data=st.session_state.pdf_eyca,
+                        data=st.session_state.pdf_eyca.getvalue(), # Extraemos los bytes limpios
                         file_name=f"Factura_{nom_c}.pdf",
-                        mime="application/pdf"
+                        mime="application/pdf",
+                        key="download_btn_final"
                     )
+
 
         # MÓDULO VER STOCK
         elif accion == "Ver Stock":
             st.header("📊 Inventario en Tiempo Real")
             res_s = supabase.table("inventario").select("*").execute()
             st.dataframe(pd.DataFrame(res_s.data), use_container_width=True)
-            
