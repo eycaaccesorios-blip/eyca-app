@@ -114,7 +114,8 @@ elif menu == "🔐 Gestión de Bodega":
                 with c1:
                     cod = st.text_input("Código de Referencia")
                     nom = st.text_input("Nombre del Accesorio")
-                    cat = st.selectbox("Categoría", ["Anillos", "Aretes", "Cadenas", "Pulseras", "Relojes", "Otros"])
+                    cat = st.selectbox("Categoría", ["Anillos", "Aretes", "Cadenas", "Pulseras", "Relojes", "Candongas", "Topitos", 
+                    "Tobilleras", "Dijes", "Otros"])
                 with c2:
                     pre = st.number_input("Precio Mayorista ($)", min_value=0, step=100)
                     stk = st.number_input("Stock Inicial", min_value=0, step=1)
