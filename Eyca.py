@@ -71,8 +71,8 @@ def generar_pdf(cliente, nit, vendedor, carrito, subtotal, desc_porc, total):
     pdf.cell(150, 10, "TOTAL NETO:", 0, 0, 'R')
     pdf.cell(40, 10, f"${total:,.0f}", 0, 1, 'R')
     
-     return bytes(pdf.output())
-     
+    return bytes(pdf.output())
+
 # --- FLUJO DE LA APLICACIÓN ---
 menu = st.sidebar.radio("Navegación", ["✨ Catálogo Público", "🔐 Gestión de Bodega"])
 
