@@ -194,4 +194,4 @@ elif menu == "🔐 Gestión de Bodega":
             st.header("📊 Inventario en Tiempo Real")
             res_s = supabase.table("inventario").select("*").execute()
             st.dataframe(pd.DataFrame(res_s.data), use_container_width=True)
-            st.info("Actualice la página para ver cambios recientes en el inventario.") 
+            
