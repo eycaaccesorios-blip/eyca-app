@@ -41,7 +41,9 @@ def generar_pdf(cliente, nit, vendedor, carrito, subtotal, desc_porc, total):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("helvetica", 'B', 16)
-    pdf.cell(200, 10, "EYCA ACCESORIOS - FACTURA MAYORISTA", ln=True, align='C')
+    pdf.cell(200, 10, "EYCA ACCESORIOS ", ln=True, align='C')
+    pdf.set_font("helvetica", 'B', 12)
+    pdf.cell(200, 10, "Complementa tú estilo", ln=True, align='C')
     
     pdf.set_font("helvetica", size=10)
     pdf.cell(100, 7, f"Cliente: {cliente} | NIT/CC: {nit}", ln=True)
@@ -77,7 +79,7 @@ def generar_pdf(cliente, nit, vendedor, carrito, subtotal, desc_porc, total):
 menu = st.sidebar.radio("Navegación", ["✨ Catálogo Público", "🔐 Gestión de Bodega"])
 
 if menu == "✨ Catálogo Público":
-    st.title("💍 Catálogo Público Eyca Accesorios")
+    st.title("💍 Catálogo Eyca Accesorios")
     try:
         res = supabase.table("inventario").select("*").execute()
         df = pd.DataFrame(res.data)
