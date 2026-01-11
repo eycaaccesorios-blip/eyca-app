@@ -36,7 +36,7 @@ def login():
         return False
     return True
 
-# 3. FUNCIÓN FACTURA PDF (Optimizada para fpdf2)
+# 3. FUNCIÓN FACTURA PDF
 def generar_pdf(cliente, nit, vendedor, carrito, subtotal, desc_porc, total):
     pdf = FPDF()
     pdf.add_page()
@@ -81,7 +81,8 @@ menu = st.sidebar.radio("Navegación", ["✨ Catálogo Público", "🔐 Gestión
 if menu == "✨ Catálogo Público":
     st.title("💍 Catálogo Eyca Accesorios")
     try:
-        res = supabase.table("inventario").select("*").execute()
+        # Solo mostrar productos con stock mayor a 0
+        res = supabase.table("inventario").select("*").gt("stock", 0).execute()
         df = pd.DataFrame(res.data)
         if not df.empty:
             cats = ["Todos"] + sorted(df['categoria'].unique().tolist())
@@ -95,13 +96,13 @@ if menu == "✨ Catálogo Público":
                     st.write(f"**{row['nombre']}**")
                     st.caption(f"Referencia: {row['codigo']}")
         else:
-            st.info("No hay productos disponibles actualmente.")
+            st.info("No hay productos disponibles con stock actualmente.")
     except Exception as e:
-        st.error("Error al conectar con la base de datos.")
+        st.error(f"Error al conectar con la base de datos: {e}")
 
 elif menu == "🔐 Gestión de Bodega":
     if login():
-        accion = st.sidebar.selectbox("Tarea", ["Vender / Facturar", "Cargar Inventario", "Ver Stock"])
+        accion = st.sidebar.selectbox("Tarea", ["Vender / Facturar", "Cargar Inventario", "Modificar / Eliminar", "Ver Stock"])
 
         # MÓDULO CARGAR INVENTARIO
         if accion == "Cargar Inventario":
@@ -114,8 +115,7 @@ elif menu == "🔐 Gestión de Bodega":
                 with c1:
                     cod = st.text_input("Código de Referencia")
                     nom = st.text_input("Nombre del Accesorio")
-                    cat = st.selectbox("Categoría", ["Anillos", "Aretes", "Cadenas", "Pulseras", "Relojes", "Candongas", "Topitos", 
-                    "Tobilleras", "Dijes", "Otros"])
+                    cat = st.selectbox("Categoría", ["Anillos", "Juegos", "Aretes", "Cadenas", "Pulseras", "Relojes", "Candongas", "Topitos", "Tobilleras", "Dijes", "Otros"])
                 with c2:
                     pre = st.number_input("Precio Mayorista ($)", min_value=0, step=100)
                     stk = st.number_input("Stock Inicial", min_value=0, step=1)
@@ -123,7 +123,8 @@ elif menu == "🔐 Gestión de Bodega":
                 if st.form_submit_button("Guardar en Bodega"):
                     if foto and cod and nom:
                         with st.spinner("Subiendo archivos..."):
-                            img_res = cloudinary.uploader.upload(foto)
+                            # Subir con public_id igual al código para poder borrarlo luego
+                            img_res = cloudinary.uploader.upload(foto, public_id=f"eyca_{cod}")
                             supabase.table("inventario").insert({
                                 "codigo": cod, "nombre": nom, "precio": pre, 
                                 "stock": stk, "categoria": cat, "foto_url": img_res['secure_url']
@@ -132,29 +133,76 @@ elif menu == "🔐 Gestión de Bodega":
                     else:
                         st.error("Faltan datos obligatorios o la imagen.")
 
+        # MÓDULO MODIFICAR / ELIMINAR
+        elif accion == "Modificar / Eliminar":
+            st.header("🛠️ Gestión de Productos Existentes")
+            res_m = supabase.table("inventario").select("*").execute()
+            df_m = pd.DataFrame(res_m.data)
+
+            if not df_m.empty:
+                opciones = {f"{r['nombre']} ({r['codigo']})": r['codigo'] for _, r in df_m.iterrows()}
+                seleccion = st.selectbox("Seleccione un producto para editar:", opciones.keys())
+                cod_sel = opciones[seleccion]
+                prod_data = df_m[df_m['codigo'] == cod_sel].iloc[0]
+
+                with st.form("form_edicion"):
+                    st.write(f"Editando: **{prod_data['nombre']}**")
+                    col1, col2 = st.columns(2)
+                    edit_nom = col1.text_input("Nuevo Nombre", value=prod_data['nombre'])
+                    edit_cat = col2.selectbox("Nueva Categoría", ["Anillos", "Aretes", "Cadenas", "Pulseras", "Relojes", "Candongas", "Topitos", "Tobilleras", "Dijes", "Otros"], 
+                                             index=["Anillos", "Aretes", "Cadenas", "Pulseras", "Relojes", "Candongas", "Topitos", "Tobilleras", "Dijes", "Otros"].index(prod_data['categoria']))
+                    edit_pre = col1.number_input("Nuevo Precio ($)", value=int(prod_data['precio']))
+                    edit_stk = col2.number_input("Ajustar Stock", value=int(prod_data['stock']))
+                    
+                    st.divider()
+                    col_b1, col_b2 = st.columns(2)
+                    btn_save = col_b1.form_submit_button("✅ Guardar Cambios")
+                    btn_del = col_b2.form_submit_button("🗑️ ELIMINAR COMPLETAMENTE")
+
+                    if btn_save:
+                        supabase.table("inventario").update({
+                            "nombre": edit_nom, "precio": edit_pre, "stock": edit_stk, "categoria": edit_cat
+                        }).eq("codigo", cod_sel).execute()
+                        st.success("Producto actualizado.")
+                        st.rerun()
+
+                    if btn_del:
+                        # 1. Intentar borrar foto de Cloudinary
+                        try:
+                            cloudinary.uploader.destroy(f"eyca_{cod_sel}")
+                        except:
+                            pass
+                        # 2. Borrar de Supabase
+                        supabase.table("inventario").delete().eq("codigo", cod_sel).execute()
+                        st.error(f"Producto {prod_data['nombre']} eliminado de la bodega.")
+                        st.rerun()
+
         # MÓDULO VENDER / FACTURAR
         elif accion == "Vender / Facturar":
             st.header("🛒 Panel de Ventas")
             if 'car' not in st.session_state: st.session_state.car = []
             
-            res_v = supabase.table("inventario").select("*").execute()
+            res_v = supabase.table("inventario").select("*").gt("stock", 0).execute()
             df_inv = pd.DataFrame(res_v.data)
 
-            for i, row in df_inv.iterrows():
-                col1, col2, col3 = st.columns([1, 2, 1])
-                with col1: st.image(row['foto_url'], width=80)
-                with col2: st.write(f"**{row['nombre']}**  \nPrecio: ${row['precio']:,}")
-                with col3:
-                    cant = st.number_input("Cant", min_value=1, max_value=int(row['stock']) if int(row['stock']) > 0 else 1, key=f"v_{row['codigo']}")
-                    if st.button("Añadir", key=row['codigo']):
-                        st.session_state.car.append({
-                            'id': row['codigo'], 
-                            'nombre': row['nombre'], 
-                            'precio': row['precio'], 
-                            'cant': int(cant), 
-                            'sub': row['precio'] * int(cant)
-                        })
-                        st.toast(f"{row['nombre']} añadido.")
+            if not df_inv.empty:
+                for i, row in df_inv.iterrows():
+                    col1, col2, col3 = st.columns([1, 2, 1])
+                    with col1: st.image(row['foto_url'], width=80)
+                    with col2: st.write(f"**{row['nombre']}**  \nPrecio: ${row['precio']:,}")
+                    with col3:
+                        cant = st.number_input("Cant", min_value=1, max_value=int(row['stock']), key=f"v_{row['codigo']}")
+                        if st.button("Añadir", key=row['codigo']):
+                            st.session_state.car.append({
+                                'id': row['codigo'], 
+                                'nombre': row['nombre'], 
+                                'precio': row['precio'], 
+                                'cant': int(cant), 
+                                'sub': row['precio'] * int(cant)
+                            })
+                            st.toast(f"{row['nombre']} añadido.")
+            else:
+                st.warning("No hay productos con stock disponible para la venta.")
 
             if st.session_state.car:
                 st.divider()
@@ -175,36 +223,22 @@ elif menu == "🔐 Gestión de Bodega":
                     with st.spinner("Actualizando stock..."):
                         try:
                             for item in st.session_state.car:
-                                # Obtener stock actual correctamente
                                 producto_db = df_inv.loc[df_inv['codigo'] == item['id']]
-                                if not producto_db.empty:
-                                    stock_actual = int(producto_db['stock'].values[0])
-                                    nuevo_stk = stock_actual - item['cant']
-                                    supabase.table("inventario").update({"stock": nuevo_stk}).eq("codigo", item['id']).execute()
+                                stock_actual = int(producto_db['stock'].values[0])
+                                nuevo_stk = stock_actual - item['cant']
+                                supabase.table("inventario").update({"stock": nuevo_stk}).eq("codigo", item['id']).execute()
                             
-                            # Generar PDF y convertirlo a BytesIO para Streamlit 2026
-                            pdf_output = generar_pdf(nom_c, nit_c, nom_v, st.session_state.car, subt, desc, total)
-                            
-                            # Convertimos los bytes a un objeto que download_button acepte sin errores
-                            st.session_state.pdf_eyca = io.BytesIO(pdf_output)
+                            st.session_state.pdf_final = generar_pdf(nom_c, nit_c, nom_v, st.session_state.car, subt, desc, total)
                             st.session_state.car = [] 
-                            st.success("✅ Venta procesada exitosamente")
+                            st.success("Venta procesada con éxito.")
                         except Exception as e:
                             st.error(f"Error al procesar: {e}")
 
-                # El botón de descarga ahora usa el buffer de memoria
-                if "pdf_eyca" in st.session_state and st.session_state.pdf_eyca is not None:
-                    st.download_button(
-                        label="📩 Descargar Factura PDF",
-                        data=st.session_state.pdf_eyca.getvalue(), # Extraemos los bytes limpios
-                        file_name=f"Factura_{nom_c}.pdf",
-                        mime="application/pdf",
-                        key="download_btn_final"
-                    )
-
+                if "pdf_final" in st.session_state:
+                    st.download_button("📩 Descargar Factura PDF", st.session_state.pdf_final, f"Factura_{nom_c}.pdf", "application/pdf")
 
         # MÓDULO VER STOCK
         elif accion == "Ver Stock":
-            st.header("📊 Inventario en Tiempo Real")
+            st.header("📊 Inventario Completo")
             res_s = supabase.table("inventario").select("*").execute()
             st.dataframe(pd.DataFrame(res_s.data), use_container_width=True)
