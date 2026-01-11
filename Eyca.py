@@ -94,6 +94,7 @@ if menu == "✨ Catálogo Público":
                 with grid[i % 3]:
                     st.image(row['foto_url'], use_container_width=True)
                     st.write(f"**{row['nombre']}**")
+                    st.subheader(f"${row['precio']:,.0f}") 
                     st.caption(f"Referencia: {row['codigo']}")
         else:
             st.info("No hay productos disponibles con stock actualmente.")
